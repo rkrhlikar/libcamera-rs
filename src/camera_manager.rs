@@ -21,14 +21,16 @@ impl CameraManager {
         Ok(Arc::new(Self { raw }))
     }
 
+    /// NOTE: Some of these cameras may have already been acquired in previous
+    /// calls to this function.
     pub fn cameras(self: &Arc<Self>) -> Vec<AvailableCamera> {
         let mut out = vec![];
 
         for camera in ffi::list_cameras(self.raw.as_ref().unwrap()) {
-            out.push(AvailableCamera::new(Arc::new(Camera {
-                manager: self.clone(),
-                raw: camera.camera,
-            })))
+            out.push(AvailableCamera::new(Arc::new(Camera::new(
+                self.clone(),
+                camera.camera,
+            ))));
         }
 
         out

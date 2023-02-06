@@ -12,3 +12,4 @@ nix = { version = "0.26.2", features = ["mman"] }
 
 [build-dependencies]
 cxx-build = "1.0"
+bindgen = "0.63.0"

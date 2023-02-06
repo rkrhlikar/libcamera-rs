@@ -1,23 +1,4 @@
-use std::num::NonZeroUsize;
-
 use libcamera::Result;
-use nix::sys::mman::*;
-
-unsafe fn mmap_plane(plane: libcamera::FrameBufferPlane) -> Result<&'static [u8]> {
-    let mem = mmap(
-        None,
-        NonZeroUsize::new(plane.length as usize).unwrap(),
-        ProtFlags::PROT_READ | ProtFlags::PROT_WRITE,
-        MapFlags::MAP_SHARED,
-        plane.fd as i32,
-        plane.offset as nix::libc::off_t,
-    )?;
-
-    Ok(core::slice::from_raw_parts(
-        core::mem::transmute(mem),
-        plane.length as usize,
-    ))
-}
 
 fn main() -> Result<()> {
     let manager = libcamera::CameraManager::create()?;
@@ -34,6 +15,11 @@ fn main() -> Result<()> {
     let camera = cameras.pop().unwrap();
     println!("Id: {}", camera.id());
 
+    println!("Static Num Streams: {}", camera.streams().len());
+    for stream in camera.streams() {
+        println!("S: {:x}", stream.id())
+    }
+
     let camera = camera.acquire()?;
     println!("Acquired!");
 
@@ -44,6 +30,14 @@ fn main() -> Result<()> {
 
     // Only allocate one buffer per stream.
     config.stream_config_mut(0).set_buffer_count(1);
+
+    println!("Supported Formats:");
+    for format in config.stream_config(0).formats().pixel_formats() {
+        println!("- {:?}", format);
+    }
+
+    println!("Size: {:?}", config.stream_config(0).size());
+    println!("Pixel Format: {:?}", config.stream_config(0).pixel_format());
 
     assert_eq!(
         config.validate(),
@@ -57,52 +51,64 @@ fn main() -> Result<()> {
 
     let stream_config = config.stream_config(0);
     println!("Stream: {}", stream_config.to_string());
+    println!("Stream ID: {:x}", stream_config.stream().unwrap().id());
+
+    let stream = stream_config.stream().unwrap();
 
     let mut frame_buffer = {
-        let stream = stream_config.stream().unwrap();
-        frame_buffer_allocator.allocate(stream)?;
+        let mut frame_buffers = frame_buffer_allocator.allocate(stream)?;
 
         // We only requested that one buffer be generated.
-        let mut frame_buffers = frame_buffer_allocator.buffers(stream);
-        assert_eq!(frame_buffers.len(), 1);
-
         frame_buffers.pop().unwrap()
     };
 
+    frame_buffer.map_memory()?;
+
     let mut request = camera.create_request(0);
-    request.add_buffer(&mut frame_buffer)?;
-
-    let mut memory_buffers = vec![];
-
-    let mut current_segment: Option<libcamera::FrameBufferPlane> = None;
-    for plane in frame_buffer.planes() {
-        if let Some(p) = &mut current_segment {
-            if p.fd == plane.fd && p.offset + p.length == plane.offset {
-                p.length += plane.length;
-                continue;
-            }
-
-            memory_buffers.push(unsafe { mmap_plane(p.clone()) }?);
-        }
-
-        current_segment = Some(plane);
-    }
-
-    if let Some(p) = current_segment {
-        memory_buffers.push(unsafe { mmap_plane(p) }?);
-    }
+    request.add_buffer(frame_buffer)?;
 
     let camera = camera.start()?;
 
-    camera.queue_request(&mut request)?;
+    let mut pending_request = request.enqueue()?;
 
-    println!("{:?}", request.status());
+    let completed_request;
+    loop {
+        match pending_request.try_complete() {
+            Ok(v) => {
+                completed_request = v;
+                break;
+            }
+            Err(v) => {
+                pending_request = v;
+                std::thread::sleep(std::time::Duration::from_millis(2));
+                continue;
+            }
+        }
+    }
 
-    std::thread::sleep(std::time::Duration::from_secs(4));
+    assert_eq!(
+        completed_request.status(),
+        libcamera::RequestStatus::RequestComplete
+    );
 
-    println!("{:?}", request.status());
+    println!("{:?}", completed_request.status());
 
-    std::fs::write("image.bin", &memory_buffers[0][..]).unwrap();
+    let frame_buffer = completed_request.buffer(stream).unwrap();
+    assert_eq!(
+        frame_buffer.metadata().status,
+        libcamera::FrameStatus::FrameSuccess
+    );
+
+    let used_memory = frame_buffer.used_memory().unwrap();
+
+    println!("Timestamp: {}", frame_buffer.metadata().timestamp);
+    println!("Size: {}", used_memory.len());
+
+    std::fs::write("image.jpeg", used_memory).unwrap();
+
+    println!("Written!");
+
+    return Ok(());
 
     std::thread::sleep(std::time::Duration::from_secs(10));
 

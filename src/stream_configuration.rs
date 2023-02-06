@@ -1,8 +1,11 @@
 use std::pin::Pin;
 
 use crate::ffi;
+use crate::pixel_format::PixelFormat;
+use crate::stream::Stream;
+use crate::stream_formats::StreamFormats;
 
-pub use ffi::Stream;
+pub use ffi::Size;
 
 /// Wrapper around a ffi::StreamConfiguration value. Note that because CXX only
 /// understands C++ structs as opaque values with no defined size, this struct
@@ -13,16 +16,60 @@ pub struct StreamConfigurationOpaque {
 }
 
 impl StreamConfigurationOpaque {
+    pub fn pixel_format(&self) -> PixelFormat {
+        ffi::stream_config_pixel_format(&self.config).into()
+    }
+
+    pub fn set_pixel_format(&mut self, value: PixelFormat) {
+        ffi::stream_config_set_pixel_format(
+            unsafe { Pin::new_unchecked(&mut self.config) },
+            value.into(),
+        )
+    }
+
+    pub fn size(&self) -> Size {
+        ffi::stream_config_size(&self.config)
+    }
+
+    pub fn set_size(&mut self, value: Size) {
+        ffi::stream_config_set_size(unsafe { Pin::new_unchecked(&mut self.config) }, value)
+    }
+
+    // TODO: Most of these fields are only valid after the config is validated.
+
+    pub fn stride(&self) -> u32 {
+        ffi::stream_config_stride(&self.config)
+    }
+
+    pub fn set_stride(&mut self, value: u32) {
+        ffi::stream_config_set_stride(unsafe { Pin::new_unchecked(&mut self.config) }, value)
+    }
+
+    pub fn frame_size(&self) -> u32 {
+        ffi::stream_config_frame_size(&self.config)
+    }
+
+    pub fn set_frame_size(&mut self, value: u32) {
+        ffi::stream_config_set_frame_size(unsafe { Pin::new_unchecked(&mut self.config) }, value)
+    }
+
+    pub fn buffer_count(&self) -> u32 {
+        ffi::stream_config_buffer_count(&self.config)
+    }
+
     pub fn set_buffer_count(&mut self, value: u32) {
         ffi::stream_config_set_buffer_count(unsafe { Pin::new_unchecked(&mut self.config) }, value)
     }
 
-    /// NOTE: Streams will only be after the configuration is used to configure
-    /// a camera.
-    pub fn stream(&self) -> Option<&mut Stream> {
+    pub fn formats(&self) -> &StreamFormats {
+        unsafe { core::mem::transmute(self.config.formats()) }
+    }
+
+    /// NOTE: Streams will only be non-None after the camera is configured.
+    pub fn stream(&self) -> Option<&Stream> {
         let stream = self.config.stream();
         if stream != core::ptr::null_mut() {
-            Some(unsafe { &mut *stream })
+            Some(unsafe { core::mem::transmute(stream) })
         } else {
             None
         }

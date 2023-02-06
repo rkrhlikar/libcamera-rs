@@ -1,15 +1,20 @@
+use std::collections::HashMap;
 use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::task::Waker;
 
 use cxx::SharedPtr;
+use cxx::UniquePtr;
 
 use crate::camera_configuration::*;
 use crate::camera_manager::CameraManager;
 use crate::errors::*;
 use crate::ffi;
 use crate::frame_buffer_allocator::FrameBufferAllocator;
-use crate::request::Request;
+use crate::request::{NewRequest, Request};
+use crate::stream::Stream;
 
 pub use crate::ffi::StreamRole;
 
@@ -18,17 +23,55 @@ pub use crate::ffi::StreamRole;
 pub struct Camera {
     /// Used to ensure that the ffi::Camera outlives the ffi::CameraManager.
     #[allow(unused)]
-    pub(crate) manager: Arc<CameraManager>,
+    manager: Arc<CameraManager>,
 
-    pub(crate) raw: SharedPtr<ffi::Camera>,
+    raw: SharedPtr<ffi::Camera>,
+
+    state: Arc<Mutex<CameraState>>,
+}
+
+struct CameraState {
+    /// When in the 'Running' state, this will store a map of requests which
+    /// have been enqueued to run but are not yet complete.
+    ///
+    /// The key is each request's sequence.
+    pending_requests: HashMap<u32, Arc<Mutex<RequestQueueEntry>>>,
+}
+
+pub(crate) struct RequestQueueEntry {
+    /// If true, the request was either cancelled or completed.
+    pub done: bool,
+
+    pub waker: Option<Waker>,
 }
 
 // NOTE: Most shared logic is stored in private methods here. They should be
 // exposed as public methods in the appropriate state specific structs if they
 // are valid to be called in that state.
 impl Camera {
+    pub(crate) fn new(manager: Arc<CameraManager>, raw: SharedPtr<ffi::Camera>) -> Self {
+        Self {
+            manager,
+            raw,
+            state: Arc::new(Mutex::new(CameraState {
+                pending_requests: HashMap::new(),
+            })),
+        }
+    }
+
     pub fn id(&self) -> String {
         self.raw.as_ref().unwrap().id().to_string()
+    }
+
+    pub fn streams<'a>(&'a self) -> Vec<&'a Stream> {
+        ffi::camera_streams(self.raw.as_ref().unwrap())
+            .into_iter()
+            .map(|v| unsafe { core::mem::transmute(v.stream) })
+            .collect()
+    }
+
+    pub(crate) fn contains_stream(&self, stream: &Stream) -> bool {
+        unsafe { ffi::camera_contains_stream(self.raw.as_ref().unwrap(), stream.as_mut_ptr()) }
     }
 
     fn get_mut(&self) -> Pin<&mut ffi::Camera> {
@@ -64,18 +107,38 @@ impl Camera {
     //
     // TODO: What should we do with requests that are still hanging when the camera
     // is stopped.
-    fn create_request(self: &Arc<Self>, cookie: u64) -> Request {
+    fn create_request(self: &Arc<Self>, cookie: u64) -> NewRequest {
         let raw = self.get_mut().createRequest(cookie);
         assert!(!raw.is_null());
-        Request::new(self.clone(), raw)
+        NewRequest::new(Request::new(self.clone(), raw))
     }
 
-    // Only allocated in the Running state.
-    fn queue_request(&self, request: &mut Request) -> Result<()> {
+    pub(crate) fn queue_request(
+        &self,
+        request: &mut Request,
+    ) -> Result<Arc<Mutex<RequestQueueEntry>>> {
+        // NOTE: We lock before enqueuing to prevent the race condition of receiving a
+        // completion event before the request is fully enqueued.
+        let mut state = self.state.lock().unwrap();
+
+        // We assume that in C++, queueRequest will return an error if the camera isn't
+        // in a Running state.
         ok_if_zero(unsafe {
             self.get_mut()
                 .queueRequest(request.raw.as_mut().unwrap().get_unchecked_mut())
-        })
+        })?;
+
+        let sequence = request.sequence();
+
+        let entry = Arc::new(Mutex::new(RequestQueueEntry {
+            done: false,
+            waker: None,
+        }));
+
+        assert!(!state.pending_requests.contains_key(&sequence));
+        state.pending_requests.insert(sequence, entry.clone());
+
+        Ok(entry)
     }
 }
 
@@ -165,20 +228,23 @@ impl ConfiguredCamera {
         FrameBufferAllocator::new(self.camera.clone(), raw)
     }
 
-    pub fn create_request(&self, cookie: u64) -> Request {
+    pub fn create_request(&self, cookie: u64) -> NewRequest {
         self.camera.create_request(cookie)
     }
 
     pub fn start(self) -> Result<RunningCamera> {
         ok_if_zero(unsafe { self.camera.get_mut().start(core::ptr::null_mut()) })?;
-        Ok(RunningCamera {
-            camera: self.camera,
-        })
+        RunningCamera::create(self.camera)
     }
 }
 
 pub struct RunningCamera {
     camera: Arc<Camera>,
+
+    /// While the camera is running, we keep a listener connected to the
+    /// requestCompleted signal.
+    #[allow(unused)]
+    request_complete_slot: UniquePtr<ffi::RequestCompleteSlot>,
 }
 
 impl Deref for RunningCamera {
@@ -190,7 +256,36 @@ impl Deref for RunningCamera {
 }
 
 impl RunningCamera {
-    pub fn queue_request(&self, request: &mut Request) -> Result<()> {
-        self.camera.queue_request(request)
+    fn create(camera: Arc<Camera>) -> Result<Self> {
+        let state = camera.state.clone();
+        let request_complete_slot = ffi::camera_connect_request_completed(
+            camera.get_mut(),
+            |ctx, req| {
+                (ctx.handler)(req);
+            },
+            Box::new(ffi::RequestCompleteContext {
+                handler: Box::new(move |req| Self::handle_request_complete(&state, req)),
+            }),
+        );
+
+        Ok(RunningCamera {
+            camera,
+            request_complete_slot,
+        })
     }
+
+    fn handle_request_complete(state: &Arc<Mutex<CameraState>>, request: &ffi::Request) {
+        let mut state = state.lock().unwrap();
+        let sequence = request.sequence();
+
+        let entry = state.pending_requests.remove(&sequence).unwrap();
+        let mut guard = entry.lock().unwrap();
+
+        guard.done = true;
+        if let Some(waker) = guard.waker.take() {
+            waker.wake();
+        }
+    }
+
+    // TODO: Verify that when stopped, all requests get marked as cancelled.
 }

@@ -35,6 +35,6 @@ impl CameraConfiguration {
     }
 
     pub fn validate(&mut self) -> CameraConfigurationStatus {
-        ffi::validate_camera_config(self.raw.as_mut().unwrap())
+        self.raw.as_mut().unwrap().validate()
     }
 }

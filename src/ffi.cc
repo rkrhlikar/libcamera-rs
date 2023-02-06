@@ -1,4 +1,4 @@
-#include "wrappers.h"
+#include "ffi.h"
 
 namespace libcamera {
 
@@ -19,20 +19,15 @@ rust::Vec<CameraPtr> list_cameras(const CameraManager &camera_manager) {
 }
 
 std::unique_ptr<CameraConfiguration> generate_camera_configuration(
-    Camera &camera, rust::Slice<const ::StreamRole> stream_roles) {
+    Camera &camera, rust::Slice<const StreamRole> stream_roles) {
   StreamRoles roles;
-  for (const auto &role_rs : stream_roles) {
-    roles.push_back(static_cast<StreamRole>(role_rs));
+  for (const auto &role : stream_roles) {
+    roles.push_back(role);
   }
 
   auto config = camera.generateConfiguration(roles);
 
   return config;
-}
-
-::CameraConfigurationStatus validate_camera_config(
-    CameraConfiguration &config) {
-  return static_cast<::CameraConfigurationStatus>(config.validate());
 }
 
 std::unique_ptr<FrameBufferAllocator> new_frame_buffer_allocator(
@@ -44,10 +39,39 @@ rust::String stream_config_to_string(const StreamConfiguration &config) {
   return rust::String(config.toString());
 }
 
+PixelFormat stream_config_pixel_format(const StreamConfiguration &config) {
+  return config.pixelFormat;
+}
+void stream_config_set_pixel_format(StreamConfiguration &config,
+                                    PixelFormat value) {
+  config.pixelFormat = value;
+}
+
+Size stream_config_size(const StreamConfiguration &config) {
+  return config.size;
+}
+void stream_config_set_size(StreamConfiguration &config, Size value) {
+  config.size = value;
+}
+
+unsigned int stream_config_stride(const StreamConfiguration &config) {
+  return config.stride;
+}
+void stream_config_set_stride(StreamConfiguration &config, unsigned int value) {
+  config.stride = value;
+}
+
+unsigned int stream_config_frame_size(const StreamConfiguration &config) {
+  return config.frameSize;
+}
+void stream_config_set_frame_size(StreamConfiguration &config,
+                                  unsigned int value) {
+  config.frameSize = value;
+}
+
 unsigned int stream_config_buffer_count(const StreamConfiguration &config) {
   return config.bufferCount;
 }
-
 void stream_config_set_buffer_count(StreamConfiguration &config,
                                     unsigned int value) {
   config.bufferCount = value;
@@ -83,13 +107,13 @@ rust::Vec<::FrameBufferPlane> frame_buffer_planes(const FrameBuffer &buffer) {
 ::FrameMetadata frame_buffer_metadata(const FrameBuffer &buffer) {
   const auto &meta = buffer.metadata();
 
-  ::FrameMetadata out{.status = static_cast<::FrameStatus>(meta.status),
+  ::FrameMetadata out{.status = meta.status,
                       .sequence = meta.sequence,
                       .timestamp = meta.timestamp,
-                      .planes = rust::Vec<::FramePlaneMetadata>()};
+                      .planes = rust::Vec<::FramePlaneMetadataWrap>()};
 
   for (const auto &plane : meta.planes()) {
-    out.planes.push_back(::FramePlaneMetadata{.bytes_used = plane.bytesused});
+    out.planes.push_back({.inner = plane});
   }
 
   return out;
@@ -99,8 +123,23 @@ rust::String pixel_format_to_string(const PixelFormat &format) {
   return rust::String(format.toString());
 }
 
-::RequestStatus request_status(const Request &request) {
-  return static_cast<::RequestStatus>(request.status());
+rust::Vec<PixelFormatWrap> stream_formats_pixelformats(
+    const StreamFormats &stream_formats) {
+  auto value = stream_formats.pixelformats();
+  rust::Vec<PixelFormatWrap> out;
+  for (const auto &v : value) {
+    out.push_back({.value = v});
+  }
+  return out;
+}
+rust::Vec<SizeWrap> stream_formats_sizes(const StreamFormats &stream_formats,
+                                         const PixelFormat &pixelformat) {
+  auto value = stream_formats.sizes(pixelformat);
+  rust::Vec<SizeWrap> out;
+  for (const auto &v : value) {
+    out.push_back({.value = v});
+  }
+  return out;
 }
 
 std::unique_ptr<RequestCompleteSlot> camera_connect_request_completed(
@@ -111,6 +150,18 @@ std::unique_ptr<RequestCompleteSlot> camera_connect_request_completed(
       &camera.requestCompleted, std::move(handler), std::move(context));
 
   return slot;
+}
+
+rust::Vec<::StreamPtr> camera_streams(const Camera &camera) {
+  rust::Vec<::StreamPtr> out;
+  for (auto stream : camera.streams()) {
+    out.push_back({.stream = stream});
+  }
+  return out;
+}
+
+bool camera_contains_stream(const Camera &camera, Stream *stream) {
+  return camera.streams().contains(stream);
 }
 
 }  // namespace libcamera
