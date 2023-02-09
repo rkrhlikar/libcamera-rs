@@ -12,7 +12,7 @@ impl StreamFormats {
     pub fn pixel_formats(&self) -> Vec<PixelFormat> {
         ffi::stream_formats_pixelformats(&self.raw)
             .into_iter()
-            .map(|v| v.value.into())
+            .map(|v| v.value)
             .collect()
     }
 

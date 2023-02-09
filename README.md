@@ -1,4 +1,4 @@
-# Safe Rust Bindings for ibcamera
+# Safe Rust Bindings for Libcamera
 
 This is still under development, but is able to open a camera and send/receive requests/responses.
 

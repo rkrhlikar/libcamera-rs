@@ -17,14 +17,11 @@ pub struct StreamConfigurationOpaque {
 
 impl StreamConfigurationOpaque {
     pub fn pixel_format(&self) -> PixelFormat {
-        ffi::stream_config_pixel_format(&self.config).into()
+        ffi::stream_config_pixel_format(&self.config)
     }
 
     pub fn set_pixel_format(&mut self, value: PixelFormat) {
-        ffi::stream_config_set_pixel_format(
-            unsafe { Pin::new_unchecked(&mut self.config) },
-            value.into(),
-        )
+        ffi::stream_config_set_pixel_format(unsafe { Pin::new_unchecked(&mut self.config) }, value)
     }
 
     pub fn size(&self) -> Size {

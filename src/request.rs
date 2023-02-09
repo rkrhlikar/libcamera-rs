@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::future::Future;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -9,12 +9,15 @@ use std::task::{Context, Poll};
 use cxx::UniquePtr;
 
 use crate::camera::{Camera, RequestQueueEntry};
+use crate::control_list::ControlList;
 use crate::errors::*;
 use crate::ffi;
 use crate::frame_buffer::FrameBuffer;
 use crate::stream::Stream;
 
 pub use ffi::{RequestReuseFlag, RequestStatus};
+
+// TODO: Implement all debug impls using Request::toString()
 
 /// NOTE: When this is dropped, the libcamers C++ code will cancel the request
 /// in the destructor.
@@ -40,7 +43,7 @@ impl Request {
         }
     }
 
-    fn add_buffer(&mut self, buffer: FrameBuffer) -> Result<()> {
+    pub fn add_buffer(&mut self, buffer: FrameBuffer) -> Result<()> {
         assert!(self.camera.contains_stream(buffer.stream));
 
         // libcamera's addBuffer return EEXIST if the request already has a buffer
@@ -69,6 +72,35 @@ impl Request {
     pub fn sequence(&self) -> u32 {
         self.raw.sequence()
     }
+
+    // TODO: Change to read only and only allow on a completed request.
+    pub fn metadata_mut<'a>(&'a mut self) -> &'a mut ControlList {
+        unsafe {
+            self.raw
+                .as_mut()
+                .unwrap()
+                .metadata()
+                .get_unchecked_mut()
+                .into()
+        }
+    }
+
+    pub fn controls_mut<'a>(&'a mut self) -> &'a mut ControlList {
+        unsafe {
+            self.raw
+                .as_mut()
+                .unwrap()
+                .controls()
+                .get_unchecked_mut()
+                .into()
+        }
+    }
+}
+
+impl ToString for Request {
+    fn to_string(&self) -> String {
+        ffi::request_to_string(&self.raw)
+    }
 }
 
 /// A request which has not yet been enqueued for execution (so is still
@@ -80,10 +112,6 @@ pub struct NewRequest {
 impl NewRequest {
     pub(crate) fn new(request: Request) -> Self {
         Self { request }
-    }
-
-    pub fn add_buffer(&mut self, buffer: FrameBuffer) -> Result<()> {
-        self.request.add_buffer(buffer)
     }
 
     /// Enqueue the request to be executed on the camera.
@@ -98,6 +126,20 @@ impl NewRequest {
             request: Some(self.request),
             entry,
         })
+    }
+}
+
+impl Deref for NewRequest {
+    type Target = Request;
+
+    fn deref(&self) -> &Request {
+        &self.request
+    }
+}
+
+impl DerefMut for NewRequest {
+    fn deref_mut(&mut self) -> &mut Request {
+        &mut self.request
     }
 }
 

@@ -164,4 +164,52 @@ bool camera_contains_stream(const Camera &camera, Stream *stream) {
   return camera.streams().contains(stream);
 }
 
+rust::String request_to_string(const Request &request) {
+  return rust::String(request.toString());
+}
+
+rust::Vec<::ControlInfoMapEntry> control_info_map_entries(
+    const ControlInfoMap &map) {
+  rust::Vec<::ControlInfoMapEntry> out;
+  for (const auto &[key, value] : map) {
+    out.push_back(::ControlInfoMapEntry{.key = *key, .value = value});
+  }
+
+  return out;
+}
+
+rust::String control_value_get_string(const ControlValue &value) {
+  return rust::String(value.get<std::string>());
+}
+
+void control_value_set_string(ControlValue &value, const rust::String &s) {
+  value.set<std::string>(std::string(s));
+}
+
+rust::Vec<rust::String> control_value_get_string_array(
+    const ControlValue &value) {
+  rust::Vec<rust::String> out;
+  for (const auto &v : value.get<Span<const std::string>>()) {
+    out.push_back(v);
+  }
+
+  return out;
+}
+
+rust::Vec<::ControlListEntry> control_list_entries(const ControlList &list) {
+  rust::Vec<::ControlListEntry> out;
+  for (const auto &[key, value] : list) {
+    out.push_back(::ControlListEntry{.key = key, .value = value});
+  }
+  return out;
+}
+
+rust::String control_value_to_string(const ControlValue &value) {
+  return rust::String(value.toString());
+}
+
+rust::String control_info_to_string(const ControlInfo &info) {
+  return rust::String(info.toString());
+}
+
 }  // namespace libcamera

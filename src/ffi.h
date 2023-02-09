@@ -4,6 +4,7 @@
 
 #include "libcamera/libcamera.h"
 #include "rust/cxx.h"
+#include "wrapper.h"
 
 namespace libcamera {
 class RequestCompleteSlot;
@@ -98,5 +99,43 @@ std::unique_ptr<RequestCompleteSlot> camera_connect_request_completed(
 rust::Vec<::StreamPtr> camera_streams(const Camera &camera);
 
 bool camera_contains_stream(const Camera &camera, Stream *stream);
+
+rust::String request_to_string(const Request &request);
+
+rust::Vec<::ControlInfoMapEntry> control_info_map_entries(
+    const ControlInfoMap &map);
+
+rust::String control_value_get_string(const ControlValue &value);
+
+void control_value_set_string(ControlValue &value, const rust::String &s);
+
+rust::Vec<rust::String> control_value_get_string_array(
+    const ControlValue &value);
+
+template <typename T>
+rust::Slice<T> control_value_get_array(const ControlValue &value) {
+  auto span = value.get<Span<T>>();
+  return rust::Slice(span.data(), span.size());
+}
+
+template <typename T>
+void control_value_set_array(ControlValue &value, rust::Slice<T> array) {
+  value.set(Span<T>(array.data(), array.size()));
+}
+
+inline std::unique_ptr<ControlValue> new_control_value() {
+  return std::make_unique<ControlValue>();
+}
+
+rust::Vec<::ControlListEntry> control_list_entries(const ControlList &list);
+
+rust::String control_value_to_string(const ControlValue &value);
+
+rust::String control_info_to_string(const ControlInfo &info);
+
+// template<typename T>
+// T control_value_get_scalar(const ControlValue& value) {
+//     return value.get();
+// }
 
 }  // namespace libcamera

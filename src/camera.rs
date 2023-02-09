@@ -10,6 +10,8 @@ use cxx::UniquePtr;
 
 use crate::camera_configuration::*;
 use crate::camera_manager::CameraManager;
+use crate::control_info_map::ControlInfoMap;
+use crate::control_list::ControlList;
 use crate::errors::*;
 use crate::ffi;
 use crate::frame_buffer_allocator::FrameBufferAllocator;
@@ -70,8 +72,18 @@ impl Camera {
             .collect()
     }
 
+    // TODO: Instead of handling out &Stream's, we should just hand out ids.
+    // TODO: If we configure it with more roles, will that make new streams?
     pub(crate) fn contains_stream(&self, stream: &Stream) -> bool {
         unsafe { ffi::camera_contains_stream(self.raw.as_ref().unwrap(), stream.as_mut_ptr()) }
+    }
+
+    pub fn controls<'a>(&'a self) -> &'a ControlInfoMap {
+        self.raw.controls().into()
+    }
+
+    pub fn properties<'a>(&'a self) -> &'a ControlList {
+        self.raw.properties().into()
     }
 
     fn get_mut(&self) -> Pin<&mut ffi::Camera> {
