@@ -279,6 +279,7 @@ mod ffi {
         //////////////////////////////////////
 
         fn pixel_format_to_string(format: &PixelFormat) -> String;
+        fn pixel_format_from_string(string: String) -> PixelFormat;
 
         //////////////////////////////////////
 

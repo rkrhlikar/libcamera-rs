@@ -61,6 +61,7 @@ rust::Vec<::FrameBufferPlane> frame_buffer_planes(const FrameBuffer &buffer);
 ::FrameMetadata frame_buffer_metadata(const FrameBuffer &buffer);
 
 rust::String pixel_format_to_string(const PixelFormat &format);
+PixelFormat pixel_format_from_string(rust::String string);
 
 rust::Vec<PixelFormatWrap> stream_formats_pixelformats(
     const StreamFormats &stream_formats);

@@ -123,6 +123,10 @@ rust::String pixel_format_to_string(const PixelFormat &format) {
   return rust::String(format.toString());
 }
 
+PixelFormat pixel_format_from_string(rust::String string) {
+  return PixelFormat::fromString(std::string(string));
+}
+
 rust::Vec<PixelFormatWrap> stream_formats_pixelformats(
     const StreamFormats &stream_formats) {
   auto value = stream_formats.pixelformats();
