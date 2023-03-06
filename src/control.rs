@@ -12,7 +12,7 @@ pub struct Control<T: ?Sized> {
 
 // The last two trait bounds here are mainly to catch any unimplemented traits
 // for the generated code.
-impl<T: ?Sized + AssignToRawControlValue + FromRawControlValue> Control<T> {
+impl<'a, T: ?Sized + AssignToRawControlValue + FromRawControlValue<'a>> Control<T> {
     /// This is unsafe because we assume that T is compatible with id.typ().
     ///
     /// NOTE: This should only be used in auto generated code in the

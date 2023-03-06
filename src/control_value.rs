@@ -177,6 +177,14 @@ macro_rules! impl_control_value_type {
                 }
             }
 
+            impl<'a> FromRawControlValue<'a> for [$typ; 1] {
+                type Target = &'a [$typ];
+
+                fn from_value(value: &'a ffi::ControlValue) -> &'a [$typ] {
+                    ffi::[<control_value_get_ $ffi_typ _array>](value)
+                }
+            }
+
             impl AssignToRawControlValue for $typ {
                 fn assign_to(&self, value: Pin<&mut ffi::ControlValue>) {
                     value.[<set_ $ffi_typ>](self);
