@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::cell::RefCell;
 use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -36,8 +37,8 @@ struct CameraState {
     /// When in the 'Running' state, this will store a map of requests which
     /// have been enqueued to run but are not yet complete.
     ///
-    /// The key is each request's sequence.
-    pending_requests: HashMap<u32, Arc<Mutex<RequestQueueEntry>>>,
+    /// The key is each request's ID (stored in the cookie).
+    pending_requests: HashMap<u64, Arc<Mutex<RequestQueueEntry>>>,
 }
 
 pub(crate) struct RequestQueueEntry {
@@ -140,15 +141,15 @@ impl Camera {
                 .queueRequest(request.raw.as_mut().unwrap().get_unchecked_mut())
         })?;
 
-        let sequence = request.sequence();
+        let request_id = request.cookie();
 
         let entry = Arc::new(Mutex::new(RequestQueueEntry {
             done: false,
             waker: None,
         }));
 
-        assert!(!state.pending_requests.contains_key(&sequence));
-        state.pending_requests.insert(sequence, entry.clone());
+        assert!(!state.pending_requests.contains_key(&request_id));
+        state.pending_requests.insert(request_id, entry.clone());
 
         Ok(entry)
     }
@@ -216,12 +217,14 @@ impl AcquiredCamera {
 
         Ok(ConfiguredCamera {
             camera: self.camera,
+            request_id: RefCell::new(0),
         })
     }
 }
 
 pub struct ConfiguredCamera {
     camera: Arc<Camera>,
+    request_id: RefCell<u64>,
 }
 
 impl Deref for ConfiguredCamera {
@@ -240,8 +243,12 @@ impl ConfiguredCamera {
         FrameBufferAllocator::new(self.camera.clone(), raw)
     }
 
-    pub fn create_request(&self, cookie: u64) -> NewRequest {
-        self.camera.create_request(cookie)
+    pub fn create_request(&self) -> NewRequest {
+        // Use cookie to identify request in CameraState::pending_requests.
+        // Request sequence number is updated asynchronously after call to FFI
+        // in Camera::queue_event() so it cannot be used as an index.
+        (*self.request_id.borrow_mut()).wrapping_add(1);
+        self.camera.create_request(*self.request_id.borrow())
     }
 
     pub fn start(self) -> Result<RunningCamera> {
@@ -288,9 +295,9 @@ impl RunningCamera {
 
     fn handle_request_complete(state: &Arc<Mutex<CameraState>>, request: &ffi::Request) {
         let mut state = state.lock().unwrap();
-        let sequence = request.sequence();
+        let request_id = request.cookie();
 
-        let entry = state.pending_requests.remove(&sequence).unwrap();
+        let entry = state.pending_requests.remove(&request_id).unwrap();
         let mut guard = entry.lock().unwrap();
 
         guard.done = true;

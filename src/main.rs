@@ -64,7 +64,7 @@ fn main() -> Result<()> {
 
     frame_buffer.map_memory()?;
 
-    let mut request = camera.create_request(0);
+    let mut request = camera.create_request();
     request.add_buffer(frame_buffer)?;
 
     let camera = camera.start()?;
