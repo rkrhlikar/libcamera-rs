@@ -217,4 +217,8 @@ impl CompletedRequest {
     pub fn buffer(&self, stream: &Stream) -> Option<&FrameBuffer> {
         self.request.buffers.get(&stream.id())
     }
+
+    pub fn get_buffer(&self, stream_id: u64) -> Option<&FrameBuffer> {
+        self.request.buffers.get(&stream_id)
+    }
 }
