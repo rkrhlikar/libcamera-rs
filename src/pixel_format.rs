@@ -21,3 +21,11 @@ impl Debug for PixelFormat {
         write!(f, "{}", self.to_string())
     }
 }
+
+impl PartialEq for PixelFormat {
+    fn eq(&self, other: &Self) -> bool {
+        self.fourcc_ == other.fourcc_ && self.modifier_ == other.modifier_
+    }
+}
+
+impl Eq for PixelFormat {}
