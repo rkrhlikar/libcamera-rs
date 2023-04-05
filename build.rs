@@ -153,7 +153,15 @@ fn main() {
         .no_debug("libcamera.*PixelFormat")
         .enable_cxx_namespaces()
         .blocklist_function(".*")
-        .clang_args(["-x", "c++", "-std=c++2a", "-I/usr/include/libcamera"])
+        .clang_args([
+            "-x",
+            "c++",
+            "-std=c++2a",
+            "-I/usr/aarch64-linux-gnu/include/c++/9",
+            "-I/usr/aarch64-linux-gnu/include/c++/9/aarch64-linux-gnu",
+            "-I/usr/include/libcamera",
+            "--target=aarch64-linux-gnu",
+        ])
         .generate()
         .expect("Unable to generate bindings");
 
@@ -168,7 +176,10 @@ fn main() {
         .file("src/ffi.cc")
         .include("/usr/include/libcamera/")
         .flag("-std=c++2a")
+        .flag("-Wl,--unresolved-symbols=ignore-in-shared-libs")
         .compile("libcamera-cxx");
+
+    println!("cargo:rustc-link-arg=-Wl,--unresolved-symbols=ignore-in-shared-libs");
 
     println!("cargo:rustc-link-search=native=/usr/lib/aarch64-linux-gnu/");
 
